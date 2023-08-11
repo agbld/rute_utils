@@ -20,6 +20,10 @@ class RutenItemNamesDataset(Dataset):
                  num_workers=1, # for multi-processing, not working yet
                  top_n=None, 
                  verbose=False):
+        '''
+        Please notice that if the database already exists, setting create_db to True WILL remove it and re-create a new one.
+        '''
+
         self._db_path = db_path
         self._db_name = os.path.basename(self._db_path)
         self._table_name = table_name
@@ -29,9 +33,6 @@ class RutenItemNamesDataset(Dataset):
         self._num_workers = num_workers
         self._top_n = top_n
         self._verbose = verbose
-        '''
-        Please notice that if the database already exists, setting create_db to True WILL remove it and re-create a new one.
-        '''
 
         if create_db or not os.path.exists(self._db_path):
             # Remove the existing database if it exists
@@ -48,13 +49,23 @@ class RutenItemNamesDataset(Dataset):
             # Connect to the SQLite database
             self._connection = sqlite3.connect(self._db_path)
             self._cursor = self._connection.cursor()
-        
-        # Get the number of rows in the table
-        # TODO: create a tabel for the number of rows, or other metadata.
-        self._print(f'Calculating the number of rows in the table {self._table_name}...')
+
+        self._print(f'Loading database metadata...')
         start = time.time()
-        self._num_rows = self._cursor.execute(f'SELECT COUNT(*) FROM {self._table_name}').fetchone()[0]
-        self._print(f'Number of rows: {self._num_rows} (took {time.time() - start:.2f} seconds)')
+
+        # create a table for metadata if not exists
+        self._cursor.execute(f"CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT);")
+        self._connection.commit()
+        
+        # try to get the number of rows from the metadata table, if failed, calculate it and store it in the metadata table.
+        try:
+            self._num_rows = int(self._cursor.execute(f"SELECT value FROM metadata WHERE key = 'num_rows';").fetchone()[0])
+        except:
+            self._print(f'Calculating the number of rows in the table {self._table_name}...')
+            self._num_rows = self._cursor.execute(f'SELECT COUNT(*) FROM {self._table_name}').fetchone()[0]
+            self._cursor.execute(f"INSERT INTO metadata (key, value) VALUES ('num_rows', '{self._num_rows}');")
+            self._connection.commit()
+        self._print(f'Number of rows in the table {self._table_name}: {self._num_rows} (took {time.time() - start:.6f} seconds)')
 
     def __len__(self):
         return self._num_rows
@@ -137,21 +148,24 @@ class RutenItemNamesDataset(Dataset):
 #%%
 # Test the dataset
 if __name__ == '__main__':
+    print('initializing dataset...')
     dataset = RutenItemNamesDataset(db_path='ruten.db',
                                     table_name='ruten_items',
                                     col_item_name='G_NAME',
-                                    create_db=False,
+                                    create_db=False,    # set to True to re-create the database
                                     path_to_ruten_items_folder='/mnt/share_disk/Datasets/Ruten/item/activate_item/',
-                                    batch_size=5,
-                                    num_workers=8,
-                                    top_n=10,
+                                    top_n=5, # set to None to load all parquet files in the folder
                                     verbose=True)
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=0)
+    
+    print('initializing dataloader...')
+    dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
     for batch in dataloader:
+        input('Press Enter to continue...')
+        start = time.time()
         for item in batch:
             print(item)
-        input()
+        print(f'Took {time.time() - start:.6} seconds to print 10 items.')
 
 
 #%%
