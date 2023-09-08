@@ -69,6 +69,9 @@ class RutenItemNamesDataset(Dataset):
 
     def __len__(self):
         return self._num_rows
+
+    def nunique(self):
+        return self._cursor.execute(f'SELECT COUNT(DISTINCT {self._col_item_name}) FROM {self._table_name}').fetchone()[0]
     
     def __getitem__(self, index) -> str:
         index += 1  # SQLite starts from 1
@@ -119,32 +122,6 @@ class RutenItemNamesDataset(Dataset):
 
         self._print("All parquet data has been loaded into the SQLite database.")
 
-    def _create_db_multi(self):  # TODO: multi-processing version, not working yet
-        self._print('Loading parquets into database... (this may take a while)')
-        parquet_files = []
-        for filename in os.listdir(self._path_to_ruten_items_folder):
-            if filename.endswith('.parquet'):
-                parquet_files.append(os.path.join(self._path_to_ruten_items_folder, filename))
-        parquet_files = parquet_files[:self._top_n]
-        
-        parquet_files_batches = []
-        for i in range(0, len(parquet_files), self._batch_size):
-            parquet_files_batches.append(parquet_files[i:i+self._batch_size])
-
-        def insert_batch(paths):
-            for path in paths:
-                df = pd.read_parquet(path, columns=[self._col_item_name])
-                df.to_sql(self._table_name, self._connection, if_exists='append', index=False)
-
-        with Pool(processes=self._num_workers) as pool:
-            tmp = list(tqdm(pool.imap(insert_batch, parquet_files_batches), total=len(parquet_files_batches), desc="Inserting Batches", disable=not self._verbose))
-
-        # with Pool(processes=self._num_workers) as pool:
-        #     with tqdm(total=len(parquet_files_batches), desc="Inserting Batches", disable=not self._verbose) as pbar:
-        #         for _ in pool.imap(insert_batch, parquet_files_batches):
-        #             pbar.update(1)
-        self._print("All parquet data has been loaded into the SQLite database.")
-
 #%%
 # Test the dataset
 if __name__ == '__main__':
@@ -153,8 +130,8 @@ if __name__ == '__main__':
                                     table_name='ruten_items',
                                     col_item_name='G_NAME',
                                     create_db=False,    # set to True to re-create the database
-                                    path_to_ruten_items_folder='/mnt/share_disk/Datasets/Ruten/item/activate_item/',
-                                    top_n=5, # set to None to load all parquet files in the folder
+                                    path_to_ruten_items_folder='F:/Datasets/Ruten/item/activate_item/',
+                                    top_n=None, # set to None to load all parquet files in the folder
                                     verbose=True)
     
     print('initializing dataloader...')
